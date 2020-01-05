@@ -1,29 +1,30 @@
-const fs = require('fs');
-const os = require('os');
-const { join } = require('path');
-const d = require('date-fns');
-const normalizePathSep = require('slash');
-const uuid = require('uuid');
-const actual = require('@actual-app/api');
+const fs = require("fs");
+const os = require("os");
+const { join } = require("path");
+const d = require("date-fns");
+const normalizePathSep = require("slash");
+const uuid = require("uuid");
+const actual = require("@actual-app/api");
+const Papa = require("papaparse");
 const { amountToInteger } = actual.utils;
 
 // Utils
 
 function mapAccountType(type) {
   switch (type) {
-    case 'Cash':
-    case 'Checking':
-      return 'checking';
-    case 'CreditCard':
-      return 'credit';
-    case 'Savings':
-      return 'savings';
-    case 'InvestmentAccount':
-      return 'investment';
-    case 'Mortgage':
-      return 'mortgage';
+    case "Cash":
+    case "Checking":
+      return "checking";
+    case "CreditCard":
+      return "credit";
+    case "Savings":
+      return "savings";
+    case "InvestmentAccount":
+      return "investment";
+    case "Mortgage":
+      return "mortgage";
     default:
-      return 'other';
+      return "other";
   }
 }
 
@@ -50,12 +51,12 @@ function groupBy(arr, keyName) {
 }
 
 function _parse(value) {
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     // We don't want parsing to take local timezone into account,
     // which parsing a string does. Pass the integers manually to
     // bypass it.
 
-    let [year, month, day] = value.split('-');
+    let [year, month, day] = value.split("-");
     if (day != null) {
       return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
     } else if (month != null) {
@@ -68,11 +69,11 @@ function _parse(value) {
 }
 
 function monthFromDate(date) {
-  return d.format(_parse(date), 'yyyy-MM');
+  return d.format(_parse(date), "yyyy-MM");
 }
 
 function getCurrentMonth() {
-  return d.format(new Date(), 'yyyy-MM');
+  return d.format(new Date(), "yyyy-MM");
 }
 
 // Importer
@@ -94,12 +95,12 @@ async function importAccounts(data, entityIdMap) {
 }
 
 async function importCategories(data, entityIdMap) {
-  const masterCategories = sortByKey(data.masterCategories, 'sortableIndex');
+  const masterCategories = sortByKey(data.masterCategories, "sortableIndex");
 
   await Promise.all(
     masterCategories.map(async masterCategory => {
       if (
-        masterCategory.type === 'OUTFLOW' &&
+        masterCategory.type === "OUTFLOW" &&
         !masterCategory.isTombstone &&
         masterCategory.subCategories &&
         masterCategory.subCategories.some(cat => !cat.isTombstone) > 0
@@ -111,10 +112,7 @@ async function importCategories(data, entityIdMap) {
         entityIdMap.set(masterCategory.entityId, id);
 
         if (masterCategory.subCategories) {
-          const subCategories = sortByKey(
-            masterCategory.subCategories,
-            'sortableIndex'
-          );
+          const subCategories = sortByKey(masterCategory.subCategories, "sortableIndex");
           subCategories.reverse();
 
           // This can't be done in parallel because sort order depends
@@ -152,17 +150,14 @@ async function importPayees(data, entityIdMap) {
 
 async function importTransactions(data, entityIdMap) {
   const categories = await actual.getCategories();
-  const incomeCategoryId = categories.find(cat => cat.name === 'Income').id;
+  const incomeCategoryId = categories.find(cat => cat.name === "Income").id;
   const accounts = await actual.getAccounts();
   const payees = await actual.getPayees();
 
   function getCategory(id) {
-    if (id == null || id === 'Category/__Split__') {
+    if (id == null || id === "Category/__Split__") {
       return null;
-    } else if (
-      id === 'Category/__ImmediateIncome__' ||
-      id === 'Category/__DeferredIncome__'
-    ) {
+    } else if (id === "Category/__ImmediateIncome__" || id === "Category/__DeferredIncome__") {
       return incomeCategoryId;
     }
     return entityIdMap.get(id);
@@ -171,7 +166,7 @@ async function importTransactions(data, entityIdMap) {
   function isOffBudget(acctId) {
     let acct = accounts.find(acct => acct.id === acctId);
     if (!acct) {
-      throw new Error('Could not find account for transaction when importing');
+      throw new Error("Could not find account for transaction when importing");
     }
     return acct.offbudget;
   }
@@ -183,7 +178,7 @@ async function importTransactions(data, entityIdMap) {
   }
 
   let sortOrder = 1;
-  let transactionsGrouped = groupBy(data.transactions, 'accountId');
+  let transactionsGrouped = groupBy(data.transactions, "accountId");
 
   await Promise.all(
     Object.keys(transactionsGrouped).map(async accountId => {
@@ -196,15 +191,13 @@ async function importTransactions(data, entityIdMap) {
           }
 
           let id = entityIdMap.get(transaction.entityId);
-          let transferId =
-            entityIdMap.get(transaction.transferTransactionId) || null;
+          let transferId = entityIdMap.get(transaction.transferTransactionId) || null;
 
           let payee_id = null;
           let payee = null;
           if (transferId) {
             payee_id = payees.find(
-              p =>
-                p.transfer_acct === entityIdMap.get(transaction.targetAccountId)
+              p => p.transfer_acct === entityIdMap.get(transaction.targetAccountId)
             ).id;
           } else {
             payee_id = entityIdMap.get(transaction.payeeId);
@@ -265,7 +258,7 @@ function fillInBudgets(data, categoryBudgets) {
 }
 
 async function importBudgets(data, entityIdMap) {
-  let budgets = sortByKey(data.monthlyBudgets, 'month');
+  let budgets = sortByKey(data.monthlyBudgets, "month");
   let earliestMonth = monthFromDate(budgets[0].month);
   let currentMonth = getCurrentMonth();
 
@@ -274,35 +267,30 @@ async function importBudgets(data, entityIdMap) {
 
     for (let budget of budgets) {
       await Promise.all(
-        fillInBudgets(data, budget.monthlySubCategoryBudgets).map(
-          async catBudget => {
-            if (!catBudget.isTombstone) {
-              let amount = amountToInteger(catBudget.budgeted);
-              let catId = entityIdMap.get(catBudget.categoryId);
-              let month = monthFromDate(budget.month);
-              if (!catId) {
-                return;
-              }
+        fillInBudgets(data, budget.monthlySubCategoryBudgets).map(async catBudget => {
+          if (!catBudget.isTombstone) {
+            let amount = amountToInteger(catBudget.budgeted);
+            let catId = entityIdMap.get(catBudget.categoryId);
+            let month = monthFromDate(budget.month);
+            if (!catId) {
+              return;
+            }
 
-              await actual.setBudgetAmount(month, catId, amount);
+            await actual.setBudgetAmount(month, catId, amount);
 
-              if (catBudget.overspendingHandling === 'AffectsBuffer') {
-                // Turn off the carryover flag so it doesn't propagate
-                // to future months
-                carryoverFlags[catId] = false;
-              } else if (
-                catBudget.overspendingHandling === 'Confined' ||
-                carryoverFlags[catId]
-              ) {
-                // Overspending has switched to carryover, set the
-                // flag so it propagates to future months
-                carryoverFlags[catId] = true;
+            if (catBudget.overspendingHandling === "AffectsBuffer") {
+              // Turn off the carryover flag so it doesn't propagate
+              // to future months
+              carryoverFlags[catId] = false;
+            } else if (catBudget.overspendingHandling === "Confined" || carryoverFlags[catId]) {
+              // Overspending has switched to carryover, set the
+              // flag so it propagates to future months
+              carryoverFlags[catId] = true;
 
-                await actual.setBudgetCarryover(month, catId, true);
-              }
+              await actual.setBudgetCarryover(month, catId, true);
             }
           }
-        )
+        })
       );
     }
   });
@@ -313,8 +301,8 @@ function estimateRecentness(str) {
   // is aware of, which is estimated by summing up all of the version
   // numbers that its aware of. This works because version numbers are
   // increasing integers.
-  return str.split(',').reduce((total, version) => {
-    const [_, number] = version.split('-');
+  return str.split(",").reduce((total, version) => {
+    const [_, number] = version.split("-");
     return total + parseInt(number);
   }, 0);
 }
@@ -322,7 +310,7 @@ function estimateRecentness(str) {
 function findLatestDevice(files) {
   let devices = files
     .map(deviceFile => {
-      const contents = fs.readFileSync(deviceFile, 'utf8');
+      const contents = fs.readFileSync(deviceFile, "utf8");
 
       let data;
       try {
@@ -343,29 +331,29 @@ function findLatestDevice(files) {
     })
     .filter(x => x);
 
-  devices = sortByKey(devices, 'recentness');
+  devices = sortByKey(devices, "recentness");
   return devices[devices.length - 1].deviceGUID;
 }
 
 async function doImport(data) {
   const entityIdMap = new Map();
 
-  console.log('Importing Accounts...');
+  console.log("Importing Accounts...");
   await importAccounts(data, entityIdMap);
 
-  console.log('Importing Categories...');
+  console.log("Importing Categories...");
   await importCategories(data, entityIdMap);
 
-  console.log('Importing Payees...');
+  console.log("Importing Payees...");
   await importPayees(data, entityIdMap);
 
-  console.log('Importing Transactions...');
+  console.log("Importing Transactions...");
   await importTransactions(data, entityIdMap);
 
-  console.log('Importing Budgets...');
+  console.log("Importing Budgets...");
   await importBudgets(data, entityIdMap);
 
-  console.log('Setting up...');
+  console.log("Setting up...");
 }
 
 function getBudgetName(filepath) {
@@ -384,35 +372,50 @@ function getBudgetName(filepath) {
   return m[1];
 }
 
-async function importYNAB4(filepath) {
-  const budgetName = getBudgetName(filepath);
+function parseAccountFromCsv(filepath) {
+  const content = fs.readFileSync(filepath, "utf8");
+  const [meta, empty, ...csvLines] = content.split("\n");
 
-  if (!budgetName) {
-    throw new Error('Not a YNAB4 file: ' + filepath);
-  }
+  const [rawAccountName, ...rest] = meta.split(",");
+  const csvContent = csvLines.join("\n");
 
-  const metaStr = fs.readFileSync(join(filepath, 'Budget.ymeta'));
-  const meta = JSON.parse(metaStr);
-  const budgetPath = join(filepath, meta.relativeDataFolderName);
+  const { data } = Papa.parse(csvContent, { header: true });
 
-  const deviceFiles = fs.readdirSync(join(budgetPath, 'devices'));
-  let deviceGUID = findLatestDevice(
-    deviceFiles.map(f => join(budgetPath, 'devices', f))
-  );
+  console.log({ rawAccountName, data: JSON.stringify(data) });
 
-  const yfullPath = join(budgetPath, deviceGUID, 'Budget.yfull');
+  return { name: rawAccountName, transactions: data };
+}
+
+async function importCsvFilesFromRBC(dataDirPath, budgetName = "MyBudget") {
+  // const metaStr = fs.readFileSync(join(filepath, "Budget.ymeta"));
+  // const meta = JSON.parse(metaStr);
+  // const budgetPath = join(filepath, meta.relativeDataFolderName);
+
+  const csvPaths = fs
+    .readdirSync(dataDirPath)
+    .filter(name => name.endsWith(".csv"))
+    .map(f => join(dataDirPath, f));
+
+  const accounts = csvPaths.map(parseAccountFromCsv);
+
+  return;
+
+  const deviceFiles = fs.readdirSync(join(budgetPath, "devices"));
+  let deviceGUID = findLatestDevice(deviceFiles.map(f => join(budgetPath, "devices", f)));
+
+  const yfullPath = join(budgetPath, deviceGUID, "Budget.yfull");
   let contents;
   try {
-    contents = fs.readFileSync(yfullPath, 'utf8');
+    contents = fs.readFileSync(yfullPath, "utf8");
   } catch (e) {
-    throw new Error('Error reading Budget.yfull file');
+    throw new Error("Error reading Budget.yfull file");
   }
 
   let data;
   try {
     data = JSON.parse(contents);
   } catch (e) {
-    throw new Error('Error parsing Budget.yull file');
+    throw new Error("Error parsing Budget.yull file");
   }
 
   return actual.runImport(budgetName, () => doImport(data));
@@ -437,9 +440,9 @@ function findBudgetsInDir(dir) {
 }
 
 function findBudgets() {
-  return findBudgetsInDir(join(os.homedir(), 'Documents', 'YNAB')).concat(
-    findBudgetsInDir(join(os.homedir(), 'Dropbox', 'YNAB'))
+  return findBudgetsInDir(join(os.homedir(), "Documents", "YNAB")).concat(
+    findBudgetsInDir(join(os.homedir(), "Dropbox", "YNAB"))
   );
 }
 
-module.exports = { findBudgetsInDir, findBudgets, importYNAB4 };
+module.exports = { findBudgetsInDir, findBudgets, importCsvFilesFromRBC };

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-const { findBudgets, importYNAB4 } = require('./importer');
+const { findBudgets, importCsvFilesFromRBC } = require("./importer");
 
 async function run() {
   let filepath = process.argv[2];
-  await importYNAB4(filepath);
+  let budgetName = process.argv[3];
+  await importCsvFilesFromRBC(filepath, budgetName);
 }
 
 run();
