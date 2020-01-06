@@ -442,7 +442,7 @@ async function importTransactionsFromCSV(csvPath, budgetName) {
   const { name, transactions } = parseRawDataFromCsv(csvPath);
   console.log(`Opening budget: ${budgetName}`);
 
-  return actual.runImport(budgetName, () => doImportTransactionsOnly(name, transactions));
+  return actual.runWithBudget(budgetName, () => doImportTransactionsOnly(name, transactions));
 }
 
 function findBudgetsInDir(dir) {
