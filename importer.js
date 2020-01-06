@@ -373,6 +373,7 @@ function getBudgetName(filepath) {
 }
 
 function parseRawDataFromCsv(filePath) {
+  // console.log("->>", filePath);
   // const filePath = join(dataDirPath, csvFileName);
   const content = fs.readFileSync(filePath, "utf8");
   const [meta, empty, ...csvLines] = content.split("\n");
@@ -421,28 +422,30 @@ async function doImportTransactionsOnly(accountName, transactions) {
   try {
     console.log(`Searching for account: ${accountName}...`);
     const accounts = await actual.getAccounts();
-    const account = account.find(acc => acc.name === accountName);
+    const account = accounts.find(acc => acc.name === accountName);
     if (!account) throw new Error("Account not found");
 
     const accTransactions = transactions.map(toTransaction).filter(t => t);
 
     console.log(`Adding ${accTransactions.length} transactions...`);
 
-    await actual.addTransactions(account.id, accTransactions);
+    console.log(accTransactions);
+    // Uncomment to actually add them
+    // await actual.addTransactions(account.id, accTransactions);
   } catch (error) {
     console.log(error.message);
   }
 }
 
-async function importTransactionsFromCSV(csvPath, budgetName) {
+async function importTransactionsFromCSV(csvPath, budgetId) {
   /**
    * Assumes the csv file name is the same as the account
    * we'll import the transactions to
    */
   const { name, transactions } = parseRawDataFromCsv(csvPath);
-  console.log(`Opening budget: ${budgetName}`);
+  console.log(`Opening budget: ${budgetId}`);
 
-  return actual.runWithBudget(budgetName, () => doImportTransactionsOnly(name, transactions));
+  return actual.runWithBudget(budgetId, () => doImportTransactionsOnly(name, transactions));
 }
 
 function findBudgetsInDir(dir) {
