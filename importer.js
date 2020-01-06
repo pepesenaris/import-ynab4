@@ -79,6 +79,10 @@ function getCurrentMonth() {
   return d.format(new Date(), "yyyy-MM");
 }
 
+function formatDate(date) {
+  return d.format(_parse(date), "yyyy-MM-dd");
+}
+
 // Importer
 
 async function importAccounts(data, entityIdMap) {
@@ -341,11 +345,13 @@ function findLatestDevice(files) {
 async function doImport(data) {
   for (const rawAccount of data) {
     const account = toAccount(rawAccount);
-    console.log(data, rawAccount, account);
-    return;
     console.log(`Creating account: ${account.name}`);
     const accId = await actual.createAccount(account);
-    const accTransactions = rawAccount.transactions.map(toTransaction);
+
+    console.log(`Account created with id: ${accId}`);
+    console.log("Adding transactions");
+
+    const accTransactions = rawAccount.transactions.map(toTransaction).filter(t => t);
     await actual.addTransactions(accId, accTransactions);
   }
 }
@@ -391,7 +397,8 @@ function toAccount(rawAccount) {
 }
 
 function toTransaction(rawTransaction) {
-  const date = _parse(rawTransaction.Date);
+  if (!rawTransaction.Date || !rawTransaction.Amount) return undefined;
+  const date = formatDate(rawTransaction.Date);
   const amount = amountToInteger(rawTransaction.Amount);
   const payee = rawTransaction["Original Description"];
 
