@@ -1,6 +1,6 @@
 const fs = require("fs");
 const os = require("os");
-const { join } = require("path");
+const { join, basename } = require("path");
 const d = require("date-fns");
 const normalizePathSep = require("slash");
 const uuid = require("uuid");
@@ -372,8 +372,8 @@ function getBudgetName(filepath) {
   return m[1];
 }
 
-function parseRawDataFromCsv(csvFileName, dataDirPath) {
-  const filePath = join(dataDirPath, csvFileName);
+function parseRawDataFromCsv(filePath) {
+  // const filePath = join(dataDirPath, csvFileName);
   const content = fs.readFileSync(filePath, "utf8");
   const [meta, empty, ...csvLines] = content.split("\n");
 
@@ -382,7 +382,9 @@ function parseRawDataFromCsv(csvFileName, dataDirPath) {
 
   const { data } = Papa.parse(csvContent, { header: true });
 
-  return { name: csvFileName.replace(/\.csv$/, ""), rawName, transactions: data };
+  const accountName = basename(filePath).replace(/\.csv$/, "");
+
+  return { name: accountName, rawName, transactions: data };
 }
 
 function toAccount(rawAccount) {
@@ -410,9 +412,37 @@ function toTransaction(rawTransaction) {
 async function createBudgetFromCsvFiles(dataDirPath, budgetName = "MyBudget") {
   const csvPaths = fs.readdirSync(dataDirPath).filter(name => name.endsWith(".csv"));
 
-  const data = csvPaths.map(csvFileName => parseRawDataFromCsv(csvFileName, dataDirPath));
+  const data = csvPaths.map(csvFileName => parseRawDataFromCsv(join(dataDirPath, csvFileName)));
 
   return actual.runImport(budgetName, () => doImport(data));
+}
+
+async function doImportTransactionsOnly(accountName, transactions) {
+  try {
+    console.log(`Searching for account: ${accountName}...`);
+    const accounts = await actual.getAccounts();
+    const account = account.find(acc => acc.name === accountName);
+    if (!account) throw new Error("Account not found");
+
+    const accTransactions = transactions.map(toTransaction).filter(t => t);
+
+    console.log(`Adding ${accTransactions.length} transactions...`);
+
+    await actual.addTransactions(account.id, accTransactions);
+  } catch (error) {
+    console.log(error.message);
+  }
+}
+
+async function importTransactionsFromCSV(csvPath, budgetName) {
+  /**
+   * Assumes the csv file name is the same as the account
+   * we'll import the transactions to
+   */
+  const { name, transactions } = parseRawDataFromCsv(csvPath);
+  console.log(`Opening budget: ${budgetName}`);
+
+  return actual.runImport(budgetName, () => doImportTransactionsOnly(name, transactions));
 }
 
 function findBudgetsInDir(dir) {
@@ -439,4 +469,9 @@ function findBudgets() {
   );
 }
 
-module.exports = { findBudgetsInDir, findBudgets, createBudgetFromCsvFiles };
+module.exports = {
+  findBudgetsInDir,
+  findBudgets,
+  createBudgetFromCsvFiles,
+  importTransactionsFromCSV
+};
