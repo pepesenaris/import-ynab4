@@ -342,9 +342,9 @@ async function doImport(data) {
   for (const rawAccount in data) {
     const account = toAccount(rawAccount);
     console.log(`Creating account: ${account.name}`);
-    const accId = await api.createAccount(account);
+    const accId = await actual.createAccount(account);
     const accTransactions = rawAccount.transactions.map(toTransaction);
-    await api.addTransactions(accId, accTransactions);
+    await actual.addTransactions(accId, accTransactions);
   }
 }
 
@@ -401,7 +401,7 @@ function toTransaction(rawTransaction) {
 async function createBudgetFromCsvFiles(dataDirPath, budgetName = "MyBudget") {
   const csvPaths = fs.readdirSync(dataDirPath).filter(name => name.endsWith(".csv"));
 
-  const rawData = csvPaths.map(csvFileName => parseRawDataFromCsv(csvFileName, dataDirPath));
+  const data = csvPaths.map(csvFileName => parseRawDataFromCsv(csvFileName, dataDirPath));
 
   return actual.runImport(budgetName, () => doImport(data));
 }
