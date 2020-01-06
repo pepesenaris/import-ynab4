@@ -339,8 +339,10 @@ function findLatestDevice(files) {
 }
 
 async function doImport(data) {
-  for (const rawAccount in data) {
+  for (const rawAccount of data) {
     const account = toAccount(rawAccount);
+    console.log(data, rawAccount, account);
+    return;
     console.log(`Creating account: ${account.name}`);
     const accId = await actual.createAccount(account);
     const accTransactions = rawAccount.transactions.map(toTransaction);
