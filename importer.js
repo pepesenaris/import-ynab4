@@ -8,6 +8,8 @@ const actual = require("@actual-app/api");
 const Papa = require("papaparse");
 const { amountToInteger } = actual.utils;
 
+const accountExtraFields = require("./accounts.json");
+
 // Utils
 
 function mapAccountType(type) {
@@ -51,12 +53,13 @@ function groupBy(arr, keyName) {
 }
 
 function _parse(value) {
+  // Assumes the date comes in the format DD/MM/YYYY
   if (typeof value === "string") {
     // We don't want parsing to take local timezone into account,
     // which parsing a string does. Pass the integers manually to
     // bypass it.
 
-    let [year, month, day] = value.split("-");
+    let [day, month, year] = value.split("/");
     if (day != null) {
       return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
     } else if (month != null) {
@@ -336,24 +339,13 @@ function findLatestDevice(files) {
 }
 
 async function doImport(data) {
-  const entityIdMap = new Map();
-
-  console.log("Importing Accounts...");
-  await importAccounts(data, entityIdMap);
-
-  console.log("Importing Categories...");
-  await importCategories(data, entityIdMap);
-
-  console.log("Importing Payees...");
-  await importPayees(data, entityIdMap);
-
-  console.log("Importing Transactions...");
-  await importTransactions(data, entityIdMap);
-
-  console.log("Importing Budgets...");
-  await importBudgets(data, entityIdMap);
-
-  console.log("Setting up...");
+  for (const rawAccount in data) {
+    const account = toAccount(rawAccount);
+    console.log(`Creating account: ${account.name}`);
+    const accId = await api.createAccount(account);
+    const accTransactions = rawAccount.transactions.map(toTransaction);
+    await api.addTransactions(accId, accTransactions);
+  }
 }
 
 function getBudgetName(filepath) {
@@ -372,51 +364,44 @@ function getBudgetName(filepath) {
   return m[1];
 }
 
-function parseAccountFromCsv(filepath) {
-  const content = fs.readFileSync(filepath, "utf8");
+function parseRawDataFromCsv(csvFileName, dataDirPath) {
+  const filePath = join(dataDirPath, csvFileName);
+  const content = fs.readFileSync(filePath, "utf8");
   const [meta, empty, ...csvLines] = content.split("\n");
 
-  const [rawAccountName, ...rest] = meta.split(",");
+  const [rawName, ...rest] = meta.split(",");
   const csvContent = csvLines.join("\n");
 
   const { data } = Papa.parse(csvContent, { header: true });
 
-  console.log({ rawAccountName, data: JSON.stringify(data) });
-
-  return { name: rawAccountName, transactions: data };
+  return { name: csvFileName.replace(/\.csv$/, ""), rawName, transactions: data };
 }
 
-async function importCsvFilesFromRBC(dataDirPath, budgetName = "MyBudget") {
-  // const metaStr = fs.readFileSync(join(filepath, "Budget.ymeta"));
-  // const meta = JSON.parse(metaStr);
-  // const budgetPath = join(filepath, meta.relativeDataFolderName);
+function toAccount(rawAccount) {
+  const { name } = rawAccount;
+  const extraFields = accountExtraFields[name];
+  return {
+    name,
+    type: "other",
+    offbudget: false,
+    ...extraFields
+  };
+}
 
-  const csvPaths = fs
-    .readdirSync(dataDirPath)
-    .filter(name => name.endsWith(".csv"))
-    .map(f => join(dataDirPath, f));
+function toTransaction(rawTransaction) {
+  const date = _parse(rawTransaction.Date);
+  const amount = amountToInteger(rawTransaction.Amount);
+  const payee = rawTransaction["Original Description"];
 
-  const accounts = csvPaths.map(parseAccountFromCsv);
+  // Use general description as notes?
 
-  return;
+  return { date, amount, payee, imported_payee: payee };
+}
 
-  const deviceFiles = fs.readdirSync(join(budgetPath, "devices"));
-  let deviceGUID = findLatestDevice(deviceFiles.map(f => join(budgetPath, "devices", f)));
+async function createBudgetFromCsvFiles(dataDirPath, budgetName = "MyBudget") {
+  const csvPaths = fs.readdirSync(dataDirPath).filter(name => name.endsWith(".csv"));
 
-  const yfullPath = join(budgetPath, deviceGUID, "Budget.yfull");
-  let contents;
-  try {
-    contents = fs.readFileSync(yfullPath, "utf8");
-  } catch (e) {
-    throw new Error("Error reading Budget.yfull file");
-  }
-
-  let data;
-  try {
-    data = JSON.parse(contents);
-  } catch (e) {
-    throw new Error("Error parsing Budget.yull file");
-  }
+  const rawData = csvPaths.map(csvFileName => parseRawDataFromCsv(csvFileName, dataDirPath));
 
   return actual.runImport(budgetName, () => doImport(data));
 }
@@ -445,4 +430,4 @@ function findBudgets() {
   );
 }
 
-module.exports = { findBudgetsInDir, findBudgets, importCsvFilesFromRBC };
+module.exports = { findBudgetsInDir, findBudgets, createBudgetFromCsvFiles };
